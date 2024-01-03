@@ -1,6 +1,7 @@
 package urlshort
 
 import (
+	"encoding/json"
 	"gopkg.in/yaml.v2"
 	"net/http"
 )
@@ -39,20 +40,28 @@ func MapHandler(pathsToUrls map[string]string, fallback http.Handler) http.Handl
 //
 // See MapHandler to create a similar http.HandlerFunc via
 // a mapping of paths to urls.
-type YamlData struct {
-	Path string `yaml:"path"`
-	Url  string `yaml:"url"`
+type PathUrlData struct {
+	Path string `yaml:"path" json:"path"`
+	Url  string `yaml:"url" json:"url"`
 }
 
-func unmarshalYamlData(yml []byte) ([]YamlData, error) {
-	yd := []YamlData{}
+func unmarshalYamlData(yml []byte) ([]PathUrlData, error) {
+	yd := []PathUrlData{}
 	if err := yaml.Unmarshal(yml, &yd); err != nil {
 		return nil, err
 	}
 	return yd, nil
 }
 
-func createYamlMap(yamlData []YamlData) map[string]string {
+func unmarshalJSONData(data []byte) ([]PathUrlData, error) {
+	js := []PathUrlData{}
+	if err := json.Unmarshal(data, &js); err != nil {
+		return nil, err
+	}
+	return js, nil
+}
+
+func createPathUrlMap(yamlData []PathUrlData) map[string]string {
 	ym := make(map[string]string)
 	for _, v := range yamlData {
 		ym[v.Path] = v.Url
@@ -66,6 +75,22 @@ func YAMLHandler(yml []byte, fallback http.Handler) (http.HandlerFunc, error) {
 	if err != nil {
 		return nil, err
 	}
-	ym := createYamlMap(yd)
+	ym := createPathUrlMap(yd)
 	return MapHandler(ym, fallback), nil
+}
+
+func JSONHandler(json []byte, fallback http.Handler) (http.HandlerFunc, error) {
+	js, err := unmarshalJSONData(json)
+	if err != nil {
+		return nil, err
+	}
+	jm := createPathUrlMap(js)
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := jm[r.URL.Path]
+		if ok {
+			http.Redirect(w, r, p, http.StatusMovedPermanently)
+		} else {
+			fallback.ServeHTTP(w, r)
+		}
+	}, nil
 }
